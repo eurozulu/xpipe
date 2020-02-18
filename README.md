@@ -13,6 +13,37 @@ primarily used for diagnostics and testing but it can be used for a wide variety
 >
 > 
 ---
+
+Three pipe types:  
+* std console
+* netAddr (outbound)
+* Cross netAddr (inbound)  
+
+
+Start with an input stream (stdIn)
+End with an output stream (stdOut)
+
+-> X X... =>
+
+remote request reposnse to stdout
+xpipe remotehost:8090
+
+stdin to remote socket
+xpipe - remotehost:8090
+
+remote socket inbound to stdout
+xpipe ->:8090 -
+
+proxy in :5555 to remotehost:8080
+xpipe ->:5555 remotehost:8080
+
+response server listens on 8080, posts connections top 8090 to process,  
+result from 8090 posted to tmp port 1234, which pssed back result.  
+
+xpipe ->:1234 ->:8080 :8090 :1234
+xpipe ->:1234 :8080 | workit.sh |xpipe - :1234
+wait on
+
 xpipe connects 'pipes' of data together much like the regular operating system pipes, which connect `stdin` and `stdout`.  
 In addition to the regular stdin and stdout streams, xpipe supports more complex streams such as network sockets and command line processes.    
 Using a single command line, chaining the arguments together as 'named streams', complex piped processes can be created.  

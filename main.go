@@ -70,7 +70,7 @@ func main() {
 	}
 
 	target := xpipe.NewPipe("-") // final target is standard out
-	out, _ := target.OutputStream(ctx)
+	out, _ := target.OutputStream()
 
 	for {
 		select {

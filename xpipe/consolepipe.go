@@ -1,7 +1,6 @@
 package xpipe
 
 import (
-	"context"
 	"io"
 	"os"
 )
@@ -9,10 +8,15 @@ import (
 type ConsolePipe struct {
 }
 
-func (c ConsolePipe) InputStream(ctx context.Context) (io.Reader, error) {
+func (c ConsolePipe) Close() error {
+	// go ahead and do nothing
+	return nil
+}
+
+func (c ConsolePipe) InputStream() (io.Reader, error) {
 	return os.Stdin, nil
 }
 
-func (c ConsolePipe) OutputStream(ctx context.Context) (io.Writer, error) {
+func (c ConsolePipe) OutputStream() (io.Writer, error) {
 	return os.Stdout, nil
 }
