@@ -29,24 +29,24 @@ func main() {
 		}
 	}
 	logger.DefaultLog.Level = lvl
-	logger.Log(logger.DEBUG, "Loglevel: %d", lvl)
+	logger.Debug("Loglevel: %d", lvl)
 
 	nw, ok := args.Flag("network")
 	if ok {
-		logger.Log(logger.DEBUG, "network type set to %s", nw)
+		logger.Debug("network type set to %s", nw)
 		xpipe.Network = nw
 	}
 
 	to, ok := args.FlagDuration("timeout")
 	if ok {
-		logger.Log(logger.DEBUG, "timeout set to %s", to.String())
+		logger.Debug("timeout set to %s", to.String())
 		xpipe.NetTimeout = time.Duration(to)
 	}
 
 	var ctx context.Context
 	var cnl context.CancelFunc
 	if xpipe.NetTimeout == 0 {
-		logger.Log(logger.WARN, "network timeout set to zero")
+		logger.Warn("network timeout set to zero")
 		ctx, cnl = context.WithCancel(context.Background())
 	} else {
 		ctx, cnl = context.WithTimeout(context.Background(), xpipe.NetTimeout)
@@ -57,37 +57,41 @@ func main() {
 	defer close(sig)
 	signal.Notify(sig, os.Kill, os.Interrupt)
 
-	// build pipeline
-	var pl xpipe.Pipeline
-	for _, pn := range pipeNames {
-		pl = append(pl, xpipe.NewPipe(pn))
+	// convert arg parms to datastreams
+	dss := make([]xpipe.DataStreams, len(pipeNames))
+	for i, pn := range pipeNames {
+		ds := xpipe.NewDataStreams(pn)
+		if err := ds.Open(); err != nil {
+			logger.Error("Failed to open parameter %d, '%s' as a network address.  %v", i, pn, err)
+		}
+		dss[i] = ds
 	}
 
-	chPipe, err := xpipe.OpenPipeline(ctx, pl)
-	if err != nil {
-		logger.Error("failed to open pileline %v", err)
-		return
-	}
+	// build the pipeline and hook it up to stdout
+	var pipeline xpipe.Pipeline
+	pipeline.Output = os.Stdout
+	pipeline.InitPipeline(len(dss))
 
-	target := xpipe.NewPipe("-") // final target is standard out
-	out, _ := target.OutputStream()
+	defer func() {
+		logger.Debug("closing pipeline")
+		if err := pipeline.Close(); err != nil {
+			logger.Error("failed to close pipeline %v", err)
+			return
+		}
+	}()
+
+	pipeline.Connect(dss)
+
+	logger.Debug("pipeline opened")
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Log(logger.DEBUG, "context completed. %v", ctx.Err())
+			logger.Debug("context completed. %v", ctx.Err())
 			return
 		case <-sig:
-			logger.Log(logger.DEBUG, "shutdown signal received from OS")
+			logger.Debug("shutdown signal received from OS")
 			return
-		case pkt, ok := <-chPipe:
-			if !ok {
-				return
-			}
-			if _, err := out.Write(pkt); err != nil {
-				logger.Error("failed to write to output %v", err)
-				return
-			}
 		}
 	}
 }

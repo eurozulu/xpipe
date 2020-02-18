@@ -1,11 +1,11 @@
 package logger
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 var DefaultLog Logger
@@ -20,6 +20,7 @@ const DEBUG = LogLevel(10)
 type Logger struct {
 	Level LogLevel
 	Out   io.Writer
+
 }
 
 type LogLevel int
@@ -29,42 +30,41 @@ func (log Logger) Blog(l LogLevel, format string, a ...interface{}) {
 		return
 	}
 
+	formt := format
 	out := log.Out
-	if out == nil {
+	// If console output, leave message, otherwise prepend header of level and time
+	if out != nil {
+		formt = strings.Join([]string{
+			fmt.Sprintf("%v:%s:", time.Now().String(), LogLevelString(l)),
+			format}, "")
+	} else {
 		out = os.Stdout
 	}
-	if !strings.HasSuffix(format, "\n") {
-		format = strings.Join([]string{format, "\n"}, "")
-	}
-	fmt.Fprintf(out, format, a)
-}
 
-func (log Logger) Error(format string, err ...error) {
-	buf := bytes.NewBuffer(nil)
-	for _, e := range err {
-		if buf.Len() > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString(e.Error())
+	if !strings.HasSuffix(formt, "\n") {
+		formt = strings.Join([]string{formt, "\n"}, "")
 	}
-
-	out := log.Out
-	if out != nil {
-		// For file output, preceed with error text.
-		fmt.Fprint(out, ErrorText)
+	if len(a) == 0 {
+		fmt.Fprint(out)
 	} else {
-		out = os.Stderr
+		fmt.Fprintf(out, formt, a...)
 	}
-
-	fmt.Fprintf(out, format, buf.String())
 }
 
-func Log(l LogLevel, format string,  m ...interface{}) {
-	DefaultLog.Blog(l, format, m...)
+func Debug(format string, a ...interface{}) {
+	DefaultLog.Blog(DEBUG, format, a...)
 }
 
-func Error(format string, err ...error) {
-	DefaultLog.Error(format, err...)
+func Info(format string, a ...interface{}) {
+	DefaultLog.Blog(INFO, format, a...)
+}
+
+func Warn(format string, a ...interface{}) {
+	DefaultLog.Blog(WARN, format, a...)
+}
+
+func Error(format string, a ...interface{}) {
+	DefaultLog.Blog(ERROR, format, a...)
 }
 
 // ParseLogLevel attempts to parse the given string into a know levlevel.
@@ -82,5 +82,20 @@ func ParseLogLevel(s string) LogLevel {
 		return DEBUG
 	default:
 		return 0
+	}
+}
+
+func LogLevelString(ll LogLevel) string {
+	switch ll {
+	case ERROR:
+		return "error"
+	case WARN:
+		return "warn"
+	case INFO:
+		return "info"
+	case DEBUG:
+		return "debug"
+	default:
+		return ""
 	}
 }

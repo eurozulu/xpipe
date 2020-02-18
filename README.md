@@ -168,3 +168,27 @@ To create a simple mock server service with a pre-defined response, first genera
 
 `cat myResonse | xpipe :5555 | `
 # xpipe
+
+
+Process
+Each Pipe segment has an input (io.Writer) and Output (io.Reader)  
+The pipeline will initially 'open' the pipe to prepare it for working.  
+Open is non blocking, so pipeline runs over each pipe to open it up.
+
+Every pipe has its reader and writer non blocking.
+These streams are available at all times, even prior to network connections being made.  
+As the network connection is established the piep's streams are connected, internally, to the network conenction stream and data is pumped.  
+Connection order is depending on the network connection type,
+For inbound connections:
+* open pipe  starts the listener, opening the local port.
+* On a connection being made, netIn connects the nw connection to its output
+and starts pumping.
+* Then connects its input to the nw output and pumps.
+
+For outbound
+* attempt to open outbound connection.
+On connection, connect inut to nw output
+then connect output to nw input.
+
+for console
+
