@@ -68,6 +68,14 @@ func main() {
 
 	pipeline := make(xpipe.Pipeline, len(strs))
 	chConns := openPipeline(strs)
+	defer func() {
+		for _, c := range pipeline {
+			if c != nil {
+				c.Close()
+			}
+		}
+	}()
+	chErr := make(chan error)
 
 	for {
 		select {
@@ -76,6 +84,9 @@ func main() {
 			return
 		case <-sig:
 			logger.Debug("shutdown signal received from OS")
+			return
+		case err := <-chErr:
+			logger.Info("Stream closed %v", err)
 			return
 		case ci, ok := <-chConns:
 			if !ok {
@@ -95,53 +106,48 @@ func main() {
 			}
 
 			pipeline[ci.Index] = ci.Connected
-			go connectToPeers(pipeline.Prev(ci.Index), pipeline[ci.Index], pipeline.Next(ci.Index))
+			connectToPeers(pipeline.Prev(ci.Index), pipeline[ci.Index], pipeline.Next(ci.Index), chErr)
 		}
 	}
 }
 
-type connectedIndex struct {
+type newConnection struct {
 	Connected xpipe.Connection
 	Err       error
 	Index     int
 }
 
-func connectToPeers(prev xpipe.Connection, nu xpipe.Connection, next xpipe.Connection) {
-	defer func(c xpipe.Connection) {
-		if c != nil {
-			if err := c.Close(); err != nil {
-				logger.Error("Error: failed to close connection %v", err)
-			}
-		}
-	}(nu)
-
+func connectToPeers(prev xpipe.Connection, nu xpipe.Connection, next xpipe.Connection, errs chan<- error) {
 	// hook upto the next connection in the pipeline, if present
 	if next != nil {
-		if err := xpipe.
-			CopyStream(nu, next); err != nil {
-			logger.Error("stream connection closed %v.", err)
-			return
-		}
+		go func() {
+			err := xpipe.CopyStream(nu, next)
+			if err != nil {
+				errs <- err
+			}
+		}()
 	}
 	// hook upto the prev connection in the pipeline, if present
 	if prev != nil {
-		if err := xpipe.CopyStream(prev, nu); err != nil {
-			logger.Error("stream connection closed %v.", err)
-			return
-		}
+		go func() {
+			err := xpipe.CopyStream(prev, nu)
+			if err != nil {
+				errs <- err
+			}
+		}()
 	}
 }
 
-func openPipeline(strs []xpipe.Streams) <-chan *connectedIndex {
-	conns := make(chan *connectedIndex, len(strs))
+func openPipeline(strs []xpipe.Streams) <-chan *newConnection {
+	conns := make(chan *newConnection, len(strs))
 	var wg sync.WaitGroup
 
 	for i, str := range strs {
 		wg.Add(1)
-		go func(index int, st xpipe.Streams, ch chan<- *connectedIndex) {
+		go func(index int, st xpipe.Streams, ch chan<- *newConnection) {
 			defer wg.Done()
 
-			ci := &connectedIndex{
+			ci := &newConnection{
 				Index: index,
 			}
 			cnt, err := st.Connect()
@@ -153,7 +159,7 @@ func openPipeline(strs []xpipe.Streams) <-chan *connectedIndex {
 			ch <- ci
 		}(i, str, conns)
 	}
-	go func(ch chan<- *connectedIndex, w sync.WaitGroup) {
+	go func(ch chan<- *newConnection, w sync.WaitGroup) {
 		w.Wait()
 		close(ch)
 	}(conns, wg)

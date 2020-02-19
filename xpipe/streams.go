@@ -21,18 +21,17 @@ type Streams interface {
 
 // NewStreams creates a new Streams based on the given name.
 // if name is a '-', then a ConsoleStreams is created
-// If name begins with '=>' an Inbound Network Streams is created
+// If name is in brackets an Inbound Network Streams is created
 // Otherwise an outbound network connection is created
 func NewStreams(pn string) (Streams, error) {
 	if "-" == pn {
 		return &ConsoleStreams{}, nil
 	}
 
-	// If no 'arrow head', treat as regular host:port
-	if !strings.HasPrefix(pn, "=>") {
-		return &NetAddrSender{NetAddr: pn}, nil
+	if strings.HasPrefix(pn, "(") && strings.HasSuffix(pn, ")") {
+		return NewNetAddrListener(pn[1: len(pn) - 1])
 	}
-	return NewNetAddrListener(pn[2:])
+	return &NetAddrSender{NetAddr: pn}, nil
 }
 
 // CopyStream copies the given Readers content, into the given writer until EOF or other error occurs.
