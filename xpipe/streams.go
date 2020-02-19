@@ -32,8 +32,12 @@ func NewStreams(pn string) (Streams, error) {
 		return &SplitStream{}, nil
 	}
 
-	if strings.HasPrefix(pn, "\\") {
-		return NewNetAddrListener(pn[1:])
+	if strings.HasPrefix(pn, "@") {
+		na := pn[1:]
+		if !strings.Contains(na, ":") {
+			na = ":" + na
+		}
+		return NewNetAddrListener(na)
 	}
 	return &NetAddrSender{NetAddr: pn}, nil
 }

@@ -51,7 +51,7 @@ func (n *NetAddrListener) Connect() (Connection, error) {
 	}
 	n.conn = c
 
-	logger.Debug("inbound network connection on '%s' from '%s'", n.NetAddr, n.conn.RemoteAddr().String())
+	logger.Info("inbound network connection on '%s' from '%s'", n.NetAddr, n.conn.RemoteAddr().String())
 	return n.conn, nil
 }
 
