@@ -1,0 +1,73 @@
+pipe lifecycle:
+
+Create
+
+Open
+OnConnect
+OnDisconnect
+Close
+
+Open is non blocking, called by the openpipeline to start each pipe.
+Open spins up new func to establish a connection.
+
+OnConnect is called by the open function's go routine one it has a connection.
+Connection provides the 'real' streams to read and write to.
+Connects the real streams to the piped streams in the pipe.
+
+open func 'pumps' the data from read streams into pipe streams by starting two new funcs,
+one for each direction.  'main' open func monitors these connections until a disconnect or EOF is detected.
+
+As EOF/disconnect received on either pump, shuts down that pump, signalling to main open.
+main open then closes the other pump and shuts down the connection.
+
+Returns to the open state, waiting for a new connection.
+
+Close received externally, closes all outstanding connections and shits down listeners.
+
+
+
+inbound
+
+open connection
+	start listener and wait for a connection
+
+Both pipe in and out will block until connection received.
+
+OnConnect
+	read nw Reader and write to pipe output
+	read pipe Reader and write to nw output
+
+onDisconnect
+	send EOF to output
+	Disconnect Input
+	close network
+
+
+
+outbound
+
+open connection
+	initiate outbound connection
+
+
+Both pipe in and out will block until connection received.
+
+OnConnect
+	read pipe Reader and write to nw output
+	read nw Reader and write to pipe output
+	
+onDisconnect
+	send EOF to output
+	Disconnect Input
+	close network
+
+
+console
+open connection
+	do nothing
+
+On connect
+ read stdin Reader and write to stdout
+ read pipe Reader and write to srdout
+
+

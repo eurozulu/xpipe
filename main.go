@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"sync"
 	"time"
 )
 
@@ -57,32 +58,16 @@ func main() {
 	defer close(sig)
 	signal.Notify(sig, os.Kill, os.Interrupt)
 
-	// convert arg parms to datastreams
-	dss := make([]xpipe.DataStreams, len(pipeNames))
-	for i, pn := range pipeNames {
-		ds := xpipe.NewDataStreams(pn)
-		if err := ds.Open(); err != nil {
-			logger.Error("Failed to open parameter %d, '%s' as a network address.  %v", i, pn, err)
-		}
-		dss[i] = ds
+	pipeNames = append(pipeNames, "-") // out final stdOut as last pipe
+
+	strs, err := buildStreams(pipeNames)
+	if err != nil {
+		logger.Error("Error: Invalid arguments. %v", err)
+		return
 	}
 
-	// build the pipeline and hook it up to stdout
-	var pipeline xpipe.Pipeline
-	pipeline.Output = os.Stdout
-	pipeline.InitPipeline(len(dss))
-
-	defer func() {
-		logger.Debug("closing pipeline")
-		if err := pipeline.Close(); err != nil {
-			logger.Error("failed to close pipeline %v", err)
-			return
-		}
-	}()
-
-	pipeline.Connect(dss)
-
-	logger.Debug("pipeline opened")
+	pipeline := make(xpipe.Pipeline, len(strs))
+	chConns := openPipeline(strs)
 
 	for {
 		select {
@@ -92,6 +77,100 @@ func main() {
 		case <-sig:
 			logger.Debug("shutdown signal received from OS")
 			return
+		case ci, ok := <-chConns:
+			if !ok {
+				logger.Debug("pipeline connections are completed. All pipes are open.")
+			}
+			if ci.Err != nil {
+				logger.Error("Error: %v", ci.Err)
+				return
+			}
+			if ci.Index >= len(pipeline) {
+				logger.Error("unexpected connection index of %d. Out of range of the pipeline length of %d", ci.Index, len(pipeline))
+				return
+			}
+			if pipeline[ci.Index] != nil {
+				logger.Error("unexpected second connection at index %d.", ci.Index)
+				return
+			}
+
+			pipeline[ci.Index] = ci.Connected
+			go connectToPeers(pipeline.Prev(ci.Index), pipeline[ci.Index], pipeline.Next(ci.Index))
 		}
 	}
+}
+
+type connectedIndex struct {
+	Connected xpipe.Connection
+	Err       error
+	Index     int
+}
+
+func connectToPeers(prev xpipe.Connection, nu xpipe.Connection, next xpipe.Connection) {
+	defer func(c xpipe.Connection) {
+		if c != nil {
+			if err := c.Close(); err != nil {
+				logger.Error("Error: failed to close connection %v", err)
+			}
+		}
+	}(nu)
+
+	// hook upto the next connection in the pipeline, if present
+	if next != nil {
+		if err := xpipe.
+			CopyStream(nu, next); err != nil {
+			logger.Error("stream connection closed %v.", err)
+			return
+		}
+	}
+	// hook upto the prev connection in the pipeline, if present
+	if prev != nil {
+		if err := xpipe.CopyStream(prev, nu); err != nil {
+			logger.Error("stream connection closed %v.", err)
+			return
+		}
+	}
+}
+
+func openPipeline(strs []xpipe.Streams) <-chan *connectedIndex {
+	conns := make(chan *connectedIndex, len(strs))
+	var wg sync.WaitGroup
+
+	for i, str := range strs {
+		wg.Add(1)
+		go func(index int, st xpipe.Streams, ch chan<- *connectedIndex) {
+			defer wg.Done()
+
+			ci := &connectedIndex{
+				Index: index,
+			}
+			cnt, err := st.Connect()
+			if err != nil {
+				ci.Err = err
+			} else {
+				ci.Connected = cnt
+			}
+			ch <- ci
+		}(i, str, conns)
+	}
+	go func(ch chan<- *connectedIndex, w sync.WaitGroup) {
+		w.Wait()
+		close(ch)
+	}(conns, wg)
+
+	logger.Debug("pipeline opened")
+	return conns
+}
+
+// build the full pipe line, to allow listeners to fire up, prior to streaming.
+func buildStreams(addrs []string) ([]xpipe.Streams, error) {
+	strs := make([]xpipe.Streams, len(addrs))
+	for i, addr := range addrs {
+		str, err := xpipe.NewStreams(addr)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to '%s' as a network address.  %v", addr, err)
+		}
+		strs[i] = str
+	}
+	return strs, nil
 }

@@ -8,9 +8,13 @@ import (
 	"time"
 )
 
-var DefaultLog Logger
+var DefaultLog *Logger
 
-const ErrorText = "ERROR:"
+func init() {
+	DefaultLog = &Logger{
+		Level: ERROR,
+	}
+}
 
 const ERROR = LogLevel(0)
 const WARN = LogLevel(1)
