@@ -28,8 +28,12 @@ func NewStreams(pn string) (Streams, error) {
 		return &ConsoleStreams{}, nil
 	}
 
-	if strings.HasPrefix(pn, "(") && strings.HasSuffix(pn, ")") {
-		return NewNetAddrListener(pn[1: len(pn) - 1])
+	if "+" == pn {
+		return &SplitStream{}, nil
+	}
+
+	if strings.HasPrefix(pn, "\\") {
+		return NewNetAddrListener(pn[1:])
 	}
 	return &NetAddrSender{NetAddr: pn}, nil
 }
